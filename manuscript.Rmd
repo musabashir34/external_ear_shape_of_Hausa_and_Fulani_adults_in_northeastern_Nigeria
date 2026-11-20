@@ -1,0 +1,462 @@
+---
+title: "Sexual dimorphism, ethnic variation and bilateral asymmetry in external ear shape of Hausa and Fulani adults in northeastern Nigeria: a geometric morphometric study"
+output:
+  word_document:
+    reference_docx: templates/reference.docx
+bibliography: references.bib
+csl: templates/springer-basic-brackets.csl
+link-citations: false
+params:
+  iter: 9999          # permutations for every randomization test
+  seed: 20261116
+  pc_variance: 0.95   # PCs used for CVA/DFA: those explaining this proportion of shape variance
+  embed_figures: true # false: figure titles and legends only, as required for journal submission
+---
+
+```{r setup, include = FALSE}
+## Knitting this file reproduces the article (manuscript.docx), its tables, figures (output/figures)
+## and Additional file 1 (output/) from the raw tpsDig2 files in data/raw/.
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+suppressMessages({ library(geomorph); library(RRPP); library(MASS); library(abind); library(Morpho); library(flextable); library(officer) })
+ITER <- params$iter; SEED <- params$seed; PVAR <- params$pc_variance; set.seed(SEED)
+OUT <- "output"; FIG <- file.path(OUT, "figures"); dir.create(FIG, recursive = TRUE, showWarnings = FALSE)
+RAW <- list(right = "data/raw/right_ears_raw.TPS", left = "data/raw/left_ears_raw.TPS", replicates = "data/raw/Redigitized_Ears.TPS",
+            renames = "data/raw/image_renames.csv", participants = "data/participants.csv")
+source("R/01_functions.R")
+```
+
+```{r analysis, include = FALSE, cache = TRUE, cache.extra = list(tools::md5sum(c(list.files("R", full.names = TRUE), list.files("data", recursive = TRUE, full.names = TRUE))), params)}
+source("R/02_prepare.R", local = TRUE)      # raw tpsDig2 files -> slid configurations
+source("R/03_analysis.R", local = TRUE)     # all analyses
+```
+
+```{r outputs, include = FALSE}
+source("R/04_figures.R", local = TRUE)      # Figures 1-6
+source("R/05_additional_file.R", local = TRUE)
+writeLines(capture.output(sessionInfo()), file.path(OUT, "sessionInfo.txt"))
+```
+
+```{r figure-text, include = FALSE}
+## figure files, titles and legends: used both for the figures embedded in the text (params$embed_figures = TRUE)
+## and for the list of figure titles and legends at the end of the journal version (FALSE)
+mag_w <- c("two", "three", "four", "five")[MAG - 1]
+FIGS <- list(
+  list(file = "Figure1_configuration", width = "3.3in", title = "Landmark and semilandmark configuration of the external ear",
+       legend = paste0("Consensus configuration of the ", nrow(part), " right ears after sliding of semilandmarks and generalized Procrustes superimposition, in lateral view with aurale superior at the top and the face to the right. Filled circles, fixed landmarks numbered as in Table 1; open circles, sliding semilandmarks on the seven curves of Table 2. The line from landmark 9 to 11 outlines the tragus and is drawn for orientation only")),
+  list(file = "Figure2_PCA", width = "6.2in", title = "Principal component scores of right and left ear shape",
+       legend = paste0("Scores on the first two principal components (PC1 and PC2; percentage of total shape variance in parentheses) for the right (a) and left (b) ears of ", nrow(part), " adults. Females are shown as circles and males as triangles; Fulani with filled symbols and solid ellipses, Hausa with open symbols and dashed ellipses. Crosses, group means; ellipses enclose 95% of each group")),
+  list(file = "Figure3_PC_shapes", width = "6.2in", title = "Shape changes along the first two principal components",
+       legend = "Shapes at \u22122 and +2 standard deviations of the scores on PC1 and PC2 (black) superimposed on the mean shape (grey), for the right (a\u2013d) and left (e\u2013h) ears. Filled circles, fixed landmarks; open circles, semilandmarks"),
+  list(file = "Figure4_shape_differences", width = "6.2in", title = "Mean ear shape differences between sexes and between ethnic groups",
+       legend = paste0("Right (a\u2013d) and left (e\u2013h) ears. a, e Mean shapes of females and males; c, g mean shapes of Fulani and Hausa participants. In each pair the second mean is drawn with the difference magnified ", mag_w, " times. b, d, f, h Thin-plate spline deformation grids from the first to the magnified second mean shape. Fixed landmarks numbered as in Table 1")),
+  list(file = "Figure5_ROC", width = "6.2in", title = "Receiver operating characteristic curves of the discriminant functions",
+       legend = "ROC curves of the leave-one-out cross-validated discriminant scores for sex (solid; males as the positive class) and ethnicity (dashed; Hausa as the positive class) for the right (a) and left (b) ears. AUC, area under the curve; the diagonal shows classification by chance"),
+  list(file = "Figure6_directional_asymmetry", width = "6.2in", title = "Directional asymmetry of ear shape",
+       legend = paste0("a Mean shape of the reflected left ears and mean shape of the right ears of ", nrow(part), " adults, with the right\u2013left difference magnified ", mag_w, " times. b Thin-plate spline deformation grid from the mean left (reflected) to the magnified mean right ear shape. Fixed landmarks numbered as in Table 1")))
+fig_block <- function(n, image = TRUE) { f <- FIGS[[n]]
+  paste0(if (image) sprintf("![](%s){width=%s}\n\n", file.path(FIG, paste0(f$file, ".png")), f$width),
+         "**Figure ", n, "** ", f$title, "\n\n", f$legend, "\n\n") }
+## a figure placed after the paragraph that first cites it (embedded version only)
+fig_here <- function(n) if (params$embed_figures) knitr::asis_output(fig_block(n)) else invisible()
+```
+
+```{r numbers, include = FALSE}
+## values quoted in the text
+Rt <- res$Right; Lt <- res$Left
+ef <- function(r, e, v = "Rsq") r$at[r$at$Effect == e, v]
+se_v <- function(r, e, w) r$se$Rsq[r$se$Effect == e & r$se$Within == w]
+nb <- function(r) which(r$pct <= r$bstick)[1] - 1                       # PCs above the broken-stick expectation
+acc_cv <- function(d) acc(d$t_cv); acc_o <- function(d) acc(d$t_o)
+grp_cv <- function(d, i) 100 * d$t_cv[i, i] / sum(d$t_cv[i, ])
+lmerr <- me$pts[1:11, ]; lmerr$m <- (lmerr$Right + lmerr$Left) / 2
+least <- sub("^[0-9]+ ", "", as.character(lmerr$Element[order(-lmerr$m)][1:2]))
+most <- sub("^[0-9]+ ", "", as.character(lmerr$Element[order(lmerr$m)][1:3]))
+lc <- function(x) tolower(x)
+ar <- function(e) asym$tab[asym$tab$Effect == e, ]
+ma <- function(pattern) me$asym[grepl(pattern, me$asym$Effect), ][1, ]
+me_err_row <- me$asym[grepl("replicate|Residuals", me$asym$Effect), ][1, ]
+fa_ratio <- ma("^ind:side$")$MS / me_err_row$MS
+sg <- function(e, v = "Rsq") asym$group[asym$group$Effect == e, v]
+top <- function(x, n = 8) sort(x, decreasing = TRUE)[1:n]
+sex_top <- c(top(Rt$dd$Sex), top(Lt$dd$Sex)); sex_med <- c(median(Rt$dd$Sex), median(Lt$dd$Sex))
+pw_P <- c(Rt$pw$P_d, Rt$pw$P_D, Lt$pw$P_d, Lt$pw$P_D)
+main_P <- c(ef(Rt, "Sex", "P"), ef(Rt, "Ethnicity", "P"), ef(Rt, "Sex:Ethnicity", "P"), ef(Lt, "Sex", "P"), ef(Lt, "Ethnicity", "P"), ef(Lt, "Sex:Ethnicity", "P"))
+so <- sens_out$Right
+tan_r <- min(Rt$tc$r, Lt$tc$r)
+pmin <- 1 / (ITER + 1)
+```
+
+# Abstract
+
+**Background:** The external ear is increasingly used in forensic identification, but population-specific data on its shape are scarce for African populations. Most Nigerian studies have relied on linear measurements. This study described sexual dimorphism, ethnic variation and left–right asymmetry in ear shape among Hausa and Fulani adults and assessed how accurately ear shape classifies individuals by sex and ethnicity. Standardized photographs of the right and left ears of `r nrow(part)` adults aged `r min(part$Age)`–`r max(part$Age)` years (`r nrow(part) / 4` per sex–ethnic group) from Mayo-Belwa, Adamawa State, were digitized with 11 fixed landmarks and 37 sliding semilandmarks. Shape was analysed by Procrustes analysis of variance with age as a covariate, discriminant function analysis with leave-one-out cross-validation and Procrustes analysis of bilateral asymmetry. Both ears of `r me$n_ind` participants were digitized twice to estimate measurement error.
+
+**Results:** Digitizing error accounted for about `r round(mean(c(me$Right$err, me$Left$err)))`% of shape variation (repeatability `r rng(c(me$Right$rep, me$Left$rep), f2)`). Sex explained `r f1(ef(Rt, "Sex"))`% of right-ear and `r f1(ef(Lt, "Sex"))`% of left-ear shape variation and ethnicity `r f1(ef(Rt, "Ethnicity"))`% and `r f1(ef(Lt, "Ethnicity"))`% (all P ≤ `r fp(max(main_P[c(1, 2, 4, 5)]))`), with a significant sex × ethnicity interaction on both sides. Sex differences lay mainly at the posterior helical margin and at the junction of the lower concha border and antitragus. Cross-validated classification accuracy was `r f1(acc_cv(Rt$dsex))`% (right) and `r f1(acc_cv(Lt$dsex))`% (left) for sex and `r f1(acc_cv(Rt$deth))`% and `r f1(acc_cv(Lt$deth))`% for ethnicity. Right and left ears differed consistently (directional asymmetry, `r f1(ar("side")$Rsq)`% of shape variation; P = `r fp(ar("side")$P)`), mainly at the posterior helix. Fluctuating asymmetry was about `r round(fa_ratio)` times larger than measurement error, and the asymmetry pattern differed with sex and ethnicity.
+
+**Conclusions:** Ear shape is sexually dimorphic and moderately population-specific in Hausa and Fulani adults and classifies sex with `r round(min(acc_cv(Rt$dsex), acc_cv(Lt$dsex)))`–`r round(max(acc_cv(Rt$dsex), acc_cv(Lt$dsex)))`% accuracy after cross-validation. Because right and left ears differ systematically, side-specific reference data should be used, and the modest ethnic accuracy supports only population-level, probabilistic inference. The landmark protocol is repeatable, and the data and code are openly available.
+
+**Keywords:** Forensic anthropology, Ear shape, Geometric morphometrics, Sex estimation, Bilateral asymmetry, Semilandmarks, Hausa, Fulani
+
+# Background
+
+The external ear has a complex, individually variable form that is established early in life and changes little in adulthood apart from slow elongation of the lobule. These properties have made the ear a candidate trait for personal identification from photographs, closed-circuit television images and ear prints [@krishan2019; @purkait2016; @ghosh2025]. In a sample of more than 2600 adults, over 99.9% of ears occupied a distinct position in a multivariate space of ear features [@purkait2016]. Beyond individualization, the ear also carries information on sex and population, which can narrow the search when a person must be identified from images [@sezgin2023; @fakorede2021].
+
+Most forensic studies of the ear have used linear measurements, indices or qualitative trait scoring. In Nigeria, ear dimensions differed between Hausa, Igbo and Yoruba adults and between the right and left ears, but linear measurements classified sex with only about 56-74% accuracy [@fakorede2021]. Linear distances describe size along a few directions and miss much of the geometry of the helix, antihelix and concha. Geometric morphometrics (GMM) instead analyses the coordinates of anatomical landmarks after Procrustes superimposition, which removes differences in position, orientation and scale and retains the full geometry of the configuration [@rohlfslice1990; @adams2004]. Smooth outlines without discrete homologous points, such as the helical rim, can be represented by semilandmarks that slide along their curves to minimize bending energy [@bookstein1997; @gunz2013; @bardua2019]. Applied to lateral ear photographs of four Chinese ethnic minorities, landmark–semilandmark GMM detected ethnicity- and age-related differences in the helix, antihelix and tragus that linear measurements did not [@lizhang2025].
+
+Facial and auricular sexual dimorphism and population differences vary between populations, so reference data must be collected for each population in which they will be applied [@kleisner2021; @mbonani2025]. The Hausa and Fulani are among the largest ethnic groups of the Sahel and savannah belt of West Africa and live side by side in northern Nigeria, but their ear shape has not been described with GMM. Paired organs also raise the question of bilateral asymmetry. Directional asymmetry, a consistent difference between the right and left sides, and fluctuating asymmetry, random departures from symmetry within individuals, can be separated from each other and from digitizing error with Procrustes methods [@palmer1986; @klingenberg1998; @klingenberg2002], yet left–right differences in ear shape have rarely been quantified, although they determine whether a reference sample from one side can be applied to the other [@fakorede2021; @lin2025].
+
+The aims of this study were (i) to describe sexual dimorphism and ethnic differences in the shape of the right and left ears of Hausa and Fulani adults with landmark–semilandmark GMM; (ii) to estimate how accurately ear shape classifies individuals by sex and ethnicity; (iii) to quantify directional and fluctuating asymmetry in ear shape; and (iv) to estimate the measurement error of the landmark protocol.
+
+# Methods
+
+## Study design, setting and participants
+
+This cross-sectional comparative study was conducted in Mayo-Belwa Local Government Area, Adamawa State, northeastern Nigeria. Participants were recruited through public institutions, primary health care centres and post-primary schools by multistage stratified sampling, with `r nrow(part) / 4` participants in each sex–ethnic group (Fulani females, Hausa females, Fulani males and Hausa males; N = `r nrow(part)`). The group size was fixed by design. Studies of sampling error in GMM indicate that mean shapes and shape variances are estimated reliably from about 20 or more specimens per group [@cardini2007; @cardini2015]. Ethnicity was self-reported and accepted only when both parents and at least two grandparents belonged to the same group. Individuals with congenital or acquired auricular anomalies, auricular trauma or surgery, keloids or large piercings distorting the auricle were excluded. Age was recorded in completed years.
+
+## Ear photography
+
+The right and left ears of each participant were photographed in separate images with a mirrorless digital camera (Nikon Z5 II, 24.5 megapixels; Nikon Corporation, Tokyo, Japan) with a 120 mm lens, mounted on a tripod approximately 0.5 m from the ear, with the lens axis perpendicular to the lateral surface of the auricle and diffuse soft-box lighting. The participant was seated with the head in the Frankfort horizontal plane [@farkas1994]. Earrings, hearing aids and headwear were removed and hair was held clear of the auricle. Two photographs were taken of each ear and the clearer one was digitized. No scale was included in the photographs and the camera-to-ear distance was standardized only approximately, so centroid size could not be compared between participants; the analysis was therefore restricted to shape, and allometry (the association of shape with size) could not be assessed.
+
+## Landmark configuration
+
+Ear shape was captured with `r N_LM` fixed landmarks and `r sum(SEMI)` sliding semilandmarks, giving `r N_LM + sum(SEMI)` points per ear (Tables 1 and 2; Figure 1). The fixed landmarks comprised the superior and inferior points of attachment of the auricle (otobasion superius and inferius), the extreme points of the helix and lobule (aurale superior, aurale posterior and subaurale) and points defining the concha, tragus and antitragus. Seven curves, each running between two fixed landmarks, represented the free margin of the helix and lobule (four curves) and the border of the antihelix, antitragus and intertragic notch (three curves). The number of semilandmarks on each curve was set roughly in proportion to its length.
+
+```{r fig1, results = "asis"}
+fig_here(1)
+```
+
+```{r tables-setup, include = FALSE}
+ftab <- function(df, widths, bold_rows = integer(0), hdr = NULL) {
+  ft <- flextable(df)
+  if (!is.null(hdr)) ft <- set_header_labels(ft, values = setNames(as.list(enc2utf8(hdr)), names(df)))   # non-ASCII headers
+  ft <- font(ft, fontname = "Times New Roman", part = "all"); ft <- fontsize(ft, size = 10, part = "all")
+  ft <- bold(ft, part = "header"); if (length(bold_rows)) ft <- bold(ft, i = bold_rows, part = "body")
+  ft <- border_remove(ft); b <- fp_border(color = "black", width = 1)
+  ft <- hline_top(ft, border = b, part = "header"); ft <- hline_bottom(ft, border = b, part = "header"); ft <- hline_bottom(ft, border = b, part = "body")
+  ft <- align(ft, j = seq_len(ncol(df))[-1], align = "center", part = "all"); ft <- valign(ft, valign = "top", part = "all")
+  ft <- padding(ft, padding.top = 1, padding.bottom = 1, part = "all"); ft <- line_spacing(ft, space = 1, part = "all")
+  width(ft, width = widths / sum(widths) * 6.3)
+}
+```
+
+::: {custom-style="Table Caption"}
+**Table 1** Fixed landmarks of the external ear
+:::
+
+```{r table1}
+t1 <- data.frame(No. = 1:11, Landmark = LM_NAMES, Definition = c(
+  "Most superior point of the attachment of the auricle to the head", "Highest point on the free margin of the helix (head in the Frankfort horizontal plane)",
+  "Most posterior point on the free margin of the helix", "Lowest point on the free margin of the lobule",
+  "Most inferior point of the attachment of the lobule to the cheek",
+  "Anterior end of the inferior crus of the antihelix, where it disappears beneath the crus of the helix",
+  "Deepest point of the concave anterior border of the antihelix (posterior border of the concha)", "Tip of the antitragus",
+  "Deepest point of the notch between tragus and antitragus", "Most posterior point (tip) of the tragus",
+  "Deepest point of the anterior incisure between the tragus and the crus of the helix"),
+  Type = c("I", "III", "III", "III", "I", "I", "II", "II", "II", "II", "II"), check.names = FALSE)
+ftab(t1, c(0.45, 1.6, 3.9, 0.55))
+```
+
+::: {custom-style="Compact"}
+Type I, juxtaposition of tissues; type II, maximum of curvature; type III, extreme point defined relative to the orientation of the head [@bookstein1991]
+:::
+
+::: {custom-style="Table Caption"}
+**Table 2** Curves and semilandmarks of the external ear
+:::
+
+```{r table2}
+pts <- sapply(chains, function(ch) { s <- ch[-c(1, length(ch))]; if (length(s) == 1) s else paste0(min(s), "\u2013", max(s)) })
+t2 <- data.frame(Curve = c(paste0("C", 1:7), "Total"), Landmarks = c(sapply(CURVES, paste, collapse = " \u2192 "), ""),
+  Outline = c("Ascending helix", "Superior and posterior free margin of the helix", "Posterior helix and lobule", "Inferior margin of the lobule",
+              "Anterior border of the antihelix (upper concha border)", "Lower concha border to the antitragus", "Antitragus to the intertragic notch", ""),
+  "Points digitized" = c(SEMI + 2, sum(SEMI + 2)), Semilandmarks = c(SEMI, sum(SEMI)), "Point numbers" = c(pts, ""), check.names = FALSE)
+ftab(t2, c(0.55, 1.0, 2.3, 0.8, 1.2, 0.75))
+```
+
+::: {custom-style="Compact"}
+Points digitized include the two end points of each curve, which coincide with the fixed landmarks; these were removed and the remaining points resampled at equal arc-length intervals to the stated number of semilandmarks
+:::
+
+## Digitization and processing
+
+All photographs were digitized in tpsDig2 version 2.32 [@rohlf2015] by a single observer. For each ear the fixed landmarks were placed in the order of Table 1 and the seven curves were then traced with the curve tool. Right and left ears were digitized with the same protocol, from unmirrored images. In R, each curve was assigned to its pair of landmarks from the positions of its end points, oriented, anchored on its two landmarks and resampled to the fixed number of semilandmarks at equal arc-length intervals, giving `r N_LM + sum(SEMI)` points in the same order for every ear. Ears with missing or incomplete curves were re-digitized, and ears whose Procrustes distance from the mean shape of their side, after sliding, exceeded the upper quartile plus three times the interquartile range were checked against their photographs.
+
+Left ears were reflected by reversing the sign of their x coordinates, and all `r dim(A)[3]` configurations were superimposed by generalized Procrustes analysis (GPA) in a single run, with the semilandmarks sliding along the tangents to their curves to minimize the bending energy of the thin-plate spline relative to the consensus [@bookstein1997; @gunz2013; @bardua2019]. Each semilandmark slid between its neighbours on the same curve; the fixed landmarks did not slide. Joint sliding gave both sides a common consensus. For the analyses of each side, the slid configurations of that side were superimposed again by GPA.
+
+## Measurement error
+
+`r xfun::numbers_to_words(me$per_group, cap = TRUE)` participants were selected at random from each group, and both ears of these `r me$n_ind` participants (`r 2 * me$n_ind` images) were digitized a second time by the same observer, without reference to the first digitization. The re-digitized ears were processed as above and superimposed and slid together with the original digitizations of the same ears. For each side, measurement error was estimated by Procrustes analysis of variance (ANOVA) with individual as the factor. Repeatability was calculated from the mean squares as ((MSi − MSe)/2)/(MSe + (MSi − MSe)/2), where MSi and MSe are the individual and error mean squares, and a session term tested for systematic differences between the two digitizations [@arnqvist1998; @fruciano2016]. The displacement of each point between the two digitizations was expressed as a percentage of centroid size.
+
+## Statistical analysis
+
+Age was summarized by group as mean, standard deviation, median, interquartile range (IQR) and range. Because age was not normally distributed (Shapiro–Wilk test, P `r fpp(age$p_shapiro)`), differences in age between sexes and between ethnic groups were tested with the Mann–Whitney U test. Analyses were performed separately for the right and left ears. Principal component analysis (PCA) of the Procrustes coordinates described the main patterns of shape variation, and components were compared with the broken-stick expectation [@jackson1993]. Shape changes along the first two components were visualized as the configurations at −2 and +2 standard deviations of the scores. The adequacy of the tangent-space approximation was checked by correlating the Procrustes (geodesic) distances between all pairs of ears with the corresponding Euclidean distances in tangent space [@rohlf2015]. The effects of sex, ethnicity and their interaction were tested by Procrustes ANOVA of the model shape ~ age + sex + ethnicity + sex × ethnicity, with type II sums of squares and randomization of residuals (`r ITER` permutations) [@collyer2015; @collyer2018]. The model was also fitted without age. Pillai's trace was obtained from multivariate analysis of variance (MANOVA) of the principal component scores. Because the interaction was significant, simple effects of sex within each ethnic group and of ethnicity within each sex were tested in the same way, with age as covariate.
+
+After sliding, the last principal components carry almost no variance and make the pooled within-group covariance matrix nearly singular, so canonical variate analysis (CVA) and discriminant function analysis (DFA) were based on the principal components that together explained `r 100 * PVAR`% of shape variance (`r Rt$K` components for the right ear and `r Lt$K` for the left) [@kovarovic2011]. Results for 90% and 99% are reported for comparison. Pairwise differences among the four groups were tested with the canonical variate analysis of the Morpho package [@schlager2017]: Procrustes distances between group means were computed from all shape coordinates and Mahalanobis distances from the principal components, using the pooled within-group covariance matrix of the four groups, each with `r ITER` permutations. For the two-group comparisons, Procrustes and Mahalanobis distances were tested with `r ITER` permutations and Hotelling's T² was computed [@mitteroecker2011]. Classification used linear discriminant functions with equal prior probabilities and was cross-validated by the leave-one-out method. Receiver operating characteristic (ROC) curves of the cross-validated discriminant scores, summarised by the area under the curve (AUC), described separation independently of the classification threshold.
+
+Bilateral asymmetry was analysed with a Procrustes ANOVA with individual, side and individual × side as factors [@klingenberg1998; @klingenberg2002]. The side effect represents directional asymmetry and the individual × side interaction fluctuating asymmetry. In the measurement-error subsample, the replicate digitizations provided an error term, so that fluctuating asymmetry could be tested against measurement error. Differences in signed asymmetry (right minus reflected left configuration) among groups were tested by Procrustes ANOVA with age, sex, ethnicity and their interaction.
+
+Analyses were run in R version `r paste(R.version$major, R.version$minor, sep = ".")` [@rcore2024] with the packages geomorph version `r packageVersion("geomorph")` [@baken2021], RRPP version `r packageVersion("RRPP")` [@collyer2018], MASS [@venables2002] and Morpho version `r packageVersion("Morpho")` [@schlager2017]. Cross-validated allocations from the CVA of Morpho and from the linear discriminant functions of MASS were identical. As a sensitivity check, the analyses were repeated without the ears flagged as shape outliers.
+
+## Use of artificial intelligence tools
+
+A large language model (Claude, Anthropic, Opus 5.5 accessed November, 2026) was used to assist in debugging the R code for data processing. The authors checked all code take full responsibility for the content of the article.
+
+# Results
+
+## Participant characteristics
+
+All `r nrow(part)` participants (`r sum(part$Sex == "Female")` females and `r sum(part$Sex == "Male")` males; `r nrow(part) / 4` in each sex–ethnic group) contributed both ears, and all `r dim(A)[3]` ears were analysed; no ear was excluded. Ages ranged from `r min(part$Age)` to `r max(part$Age)` years (median `r median(part$Age)` years, IQR `r quantile(part$Age, .25)`–`r quantile(part$Age, .75)`; Table 3). Males were older than females (median `r age$med["Male"]` vs `r age$med["Female"]` years; Mann–Whitney U test, P `r fpp(age$p_sex)`), and Hausa participants were `r if (age$p_eth < 0.05) "slightly older than" else "of similar age to"` Fulani participants (median `r age$med["Hausa"]` vs `r age$med["Fulani"]` years; P `r fpp(age$p_eth)`). The ethnic difference in age was confined to females (P `r fpp(age$p_eth_f)`; males P `r fpp(age$p_eth_m)`). Age was therefore included as a covariate in the analyses of shape.
+
+::: {custom-style="Table Caption"}
+**Table 3** Characteristics of the participants
+:::
+
+```{r table3}
+q <- function(x) ifelse(x == round(x), sprintf("%d", as.integer(x)), f1(x))
+t3 <- data.frame(Group = rownames(age$tab), n = as.integer(age$tab[, "n"]),
+  "Age_mean" = paste(f2(age$tab[, "mean"]), "\u00B1", f2(age$tab[, "sd"])),
+  "Age, median (IQR)" = paste0(q(age$tab[, "median"]), " (", q(age$tab[, "q1"]), "\u2013", q(age$tab[, "q3"]), ")"),
+  "Age, range" = paste0(age$tab[, "min"], "\u2013", age$tab[, "max"]), check.names = FALSE)
+ftab(t3, c(1.6, 0.6, 1.5, 1.5, 1.0), hdr = c("Group", "n", "Age, mean \u00B1 SD", "Age, median (IQR)", "Age, range"))
+```
+
+::: {custom-style="Compact"}
+Age in years. Both ears of every participant were analysed (`r dim(A)[3]` ears). IQR, interquartile range; SD, standard deviation
+:::
+
+## Measurement error
+
+Variation among individuals clearly exceeded digitizing error on both sides (right ear: F = `r f2(me$Right$F)`, df = `r me$Right$df1`, `r me$Right$df2`, P = `r fp(me$Right$P)`; left ear: F = `r f2(me$Left$F)`, P = `r fp(me$Left$P)`; Table 4). Measurement error accounted for `r f1(me$Right$err)`% and `r f1(me$Left$err)`% of shape variation, and repeatability was `r f2(me$Right$rep)` and `r f2(me$Left$rep)`. The median displacement of the fixed landmarks between the two digitizations ranged from `r rng(unlist(lmerr[, c("Right", "Left")]), f2)`% of centroid size (Additional file 1: Table S1); `r lc(least[1])` and `r lc(least[2])` were the least repeatable landmarks and the `r lc(most[1])`, `r lc(most[2])` and `r lc(most[3])` the most repeatable. The two digitization sessions `r if (me$Right$sess_P < 0.05) "differed slightly" else "did not differ"` for the right ear (`r f2(me$Right$sess)`% of shape variation, P = `r fp(me$Right$sess_P)`) and `r if (me$Left$sess_P < 0.05) "differed slightly" else "did not differ"` for the left (`r f2(me$Left$sess)`%, P = `r fp(me$Left$sess_P)`).
+
+::: {custom-style="Table Caption"}
+**Table 4** Measurement error and bilateral asymmetry in the replicate subsample
+:::
+
+```{r table4}
+mr <- function(lab, s) data.frame(Source = c(paste0(lab, ": individual"), paste0(lab, ": measurement error"), paste0(lab, ": repeatability")),
+  df = c(s$df1, s$df2, NA), MS = c(f4(s$MSi), f4(s$MSe), ""), pSS = c(f2(100 - s$err), f2(s$err), ""),
+  F = c(f2(s$F), "", f3(s$rep)), P = c(fp(s$P), "", ""))
+ia <- ma("^ind$"); sa <- ma("^side$"); fa <- ma("^ind:side$")
+t4 <- rbind(mr("Right ear", me$Right), mr("Left ear", me$Left),
+  data.frame(Source = c("Asymmetry: individual", "Asymmetry: side (directional asymmetry)", "Asymmetry: individual \u00D7 side (fluctuating asymmetry)", "Asymmetry: measurement error"),
+             df = c(ia$df, sa$df, fa$df, me_err_row$df), MS = f4(c(ia$MS, sa$MS, fa$MS, me_err_row$MS)), pSS = f2(c(ia$Rsq, sa$Rsq, fa$Rsq, me_err_row$Rsq)),
+             F = c(f2(c(ia$F, sa$F, fa$F)), ""), P = c(fp(c(ia$P, sa$P, fa$P)), "")))
+t4$df <- ifelse(is.na(t4$df), "", t4$df); names(t4)[4] <- "% of SS"
+ftab(t4, c(2.6, 0.6, 0.95, 0.85, 0.75, 0.85))
+```
+
+::: {custom-style="Compact"}
+Both ears of `r me$n_ind` participants (`r xfun::numbers_to_words(me$per_group)` per sex–ethnic group), each digitized twice. In the asymmetry analysis, individual is tested against individual × side, side against individual × side, and individual × side against measurement error. Repeatability is given in the F column. MS, mean square; SS, sum of squares; P values from `r ITER` permutations
+:::
+
+## Shape variation
+
+Procrustes and tangent-space distances between all `r format(Rt$tc$Pairs, big.mark = "")` pairs of ears were almost perfectly correlated (r `r if (tan_r > 0.9999) "> 0.9999" else paste("\u2265", f4(tan_r))` on both sides; Additional file 1: Table S4), so the tangent-space approximation was adequate. The first three principal components explained `r f1(sum(Rt$pct[1:3]))`% of right-ear and `r f1(sum(Lt$pct[1:3]))`% of left-ear shape variation (right ear: PC1 `r f1(Rt$pct[1])`%, PC2 `r f1(Rt$pct[2])`%, PC3 `r f1(Rt$pct[3])`%; left ear: PC1 `r f1(Lt$pct[1])`%, PC2 `r f1(Lt$pct[2])`%, PC3 `r f1(Lt$pct[3])`%), and the first `r if (nb(Rt) == nb(Lt)) paste(xfun::numbers_to_words(nb(Rt)), "components on each side") else paste(nb(Rt), "(right) and", nb(Lt), "(left) components")` exceeded the broken-stick expectation (Additional file 1: Table S2). The four groups overlapped widely on the first two components, with males tending towards higher PC1 scores (Figure 2).
+
+```{r fig2, results = "asis"}
+fig_here(2)
+```
+
+The first two components described similar shape changes in both ears (Figure 3; Additional file 1: Table S3). Towards positive PC1 scores, the posterior helical margin around aurale posterior moved anteriorly, giving an auricle that was narrower relative to its length; otobasion superius moved posteroinferiorly and otobasion inferius superiorly, so that the line of attachment of the auricle was shorter; and the lower concha border and antitragus lay lower. Towards positive PC2 scores, the posterior helix again became narrower, the lobule extended further inferiorly with a lower otobasion inferius and subaurale, and the antihelix concavity moved anteriorly, narrowing the concha.
+
+```{r fig3, results = "asis"}
+fig_here(3)
+```
+
+## Sexual dimorphism and ethnic differences
+
+After adjustment for age, sex explained `r f1(ef(Rt, "Sex"))`% of right-ear and `r f1(ef(Lt, "Sex"))`% of left-ear shape variation, ethnicity `r f1(ef(Rt, "Ethnicity"))`% and `r f1(ef(Lt, "Ethnicity"))`%, and the sex × ethnicity interaction `r f1(ef(Rt, "Sex:Ethnicity"))`% and `r f1(ef(Lt, "Sex:Ethnicity"))`% (Table 5). All three effects were significant on both sides (P ≤ `r f3(max(main_P))`). Age `r if (max(ef(Rt, "Age", "P"), ef(Lt, "Age", "P")) >= 0.05) "had no significant effect" else "had a significant effect"` in the Procrustes ANOVA (right P = `r fp(ef(Rt, "Age", "P"))`; left P = `r fp(ef(Lt, "Age", "P"))`)`r if (max(Rt$pill[1, 2], Lt$pill[1, 2]) < 0.05) ", although it was significant in the MANOVA of principal component scores" else ""`; without age, sex explained `r f1(Rt$at0$Rsq[Rt$at0$Effect == "Sex"])`% and `r f1(Lt$at0$Rsq[Lt$at0$Effect == "Sex"])`% and ethnicity `r f1(Rt$at0$Rsq[Rt$at0$Effect == "Ethnicity"])`% and `r f1(Lt$at0$Rsq[Lt$at0$Effect == "Ethnicity"])`% (Additional file 1: Table S5). All simple effects were significant: sex explained `r f1(se_v(Rt, "Sex", "Fulani"))`% of right-ear shape variation in the Fulani and `r f1(se_v(Rt, "Sex", "Hausa"))`% in the Hausa, and `r f1(se_v(Lt, "Sex", "Fulani"))`% and `r f1(se_v(Lt, "Sex", "Hausa"))`% respectively of left-ear shape; ethnicity explained `r f1(se_v(Rt, "Ethnicity", "Female"))`% (right) and `r f1(se_v(Lt, "Ethnicity", "Female"))`% (left) in females and `r f1(se_v(Rt, "Ethnicity", "Male"))`% and `r f1(se_v(Lt, "Ethnicity", "Male"))`% in males (P ≤ `r f3(max(c(Rt$se$P, Lt$se$P)))`; Additional file 1: Table S6).
+
+Sex differences were concentrated at the posterior helical margin around aurale posterior and at the junction of the lower concha border with the antitragus, where the mean male and female configurations differed by `r rng(sex_top)`% of centroid size, about twice the median difference over all points (`r rng(sex_med, f2)`%; Figure 4; Additional file 1: Table S7). Ethnic differences were smaller and more diffuse; the largest were at incisura, otobasion inferius and the posterior helix (Figure 4). All pairwise differences among the four groups were significant (Table 6). The largest Mahalanobis distances separated `r sub(" vs .*", "", Rt$pw$Pair[which.max(Rt$pw$D)])`s from `r sub(".* vs ", "", Rt$pw$Pair[which.max(Rt$pw$D)])`s and the smallest separated `r sub(" vs .*", "", Rt$pw$Pair[which.min(Rt$pw$D)])`s from `r sub(".* vs ", "", Rt$pw$Pair[which.min(Rt$pw$D)])`s.
+
+```{r fig4, results = "asis"}
+fig_here(4)
+```
+
+::: {custom-style="Table Caption"}
+**Table 5** Procrustes analysis of variance of ear shape
+:::
+
+```{r table5}
+pill_mark <- function(p) ifelse(p < 1e-4, "*", "\u2020")
+side_rows <- function(r, lab) {
+  a <- r$at; eff <- c("Age", "Sex", "Ethnicity", "Sex:Ethnicity", "Residuals")
+  a <- a[match(eff, a$Effect), ]; pl <- rbind(r$pill, c(NA, NA))
+  data.frame(Effect = c(lab, "Age", "Sex", "Ethnicity", "Sex \u00D7 ethnicity", "Residual"), df = c("", a$df),
+    "R2" = c("", f2(a$Rsq)), F = c("", ifelse(is.na(a$F), "", f2(a$F))), Z = c("", ifelse(is.na(a$Z), "", f2(a$Z))),
+    P = c("", ifelse(is.na(a$P), "", f4(a$P))),
+    "Pillai's trace" = c("", ifelse(is.na(pl[, 1]), "", paste0(f3(pl[, 1]), pill_mark(pl[, 2])))), check.names = FALSE)
+}
+t5 <- rbind(side_rows(Rt, "Right ear"), side_rows(Lt, "Left ear"))
+ftab(t5, c(1.7, 0.5, 0.75, 0.75, 0.65, 0.8, 1.0), bold_rows = c(1, 7), hdr = c("Effect", "df", "R\u00B2 (%)", "F", "Z", "P", "Pillai's trace"))
+other_pill <- c(Rt$pill[, 2], Lt$pill[, 2]); other_pill <- other_pill[other_pill >= 1e-4]
+```
+
+::: {custom-style="Compact"}
+Type II sums of squares; R², percentage of shape variation; Z, standardized effect size; P values from `r ITER` permutations of residuals. Pillai's trace from MANOVA of the principal component scores explaining `r 100 * PVAR`% of shape variance: *P < 0.0001`r if (length(other_pill)) paste0("; \u2020P = ", paste(f4(other_pill), collapse = ", "))`
+:::
+
+::: {custom-style="Table Caption"}
+**Table 6** Pairwise differences between the mean ear shapes of the four groups
+:::
+
+```{r table6}
+mark <- function(p) ifelse(p > pmin, "*", "")
+t6 <- data.frame(Comparison = Rt$pw$Pair, "Right d" = paste0(f4(Rt$pw$d), mark(Rt$pw$P_d)), "Right D" = paste0(f2(Rt$pw$D), mark(Rt$pw$P_D)),
+                 "Left d" = paste0(f4(Lt$pw$d), mark(Lt$pw$P_d)), "Left D" = paste0(f2(Lt$pw$D), mark(Lt$pw$P_D)), check.names = FALSE)
+ftab(t6, c(2.6, 0.95, 0.95, 0.95, 0.95))
+other_p <- pw_P[pw_P > pmin]
+```
+
+::: {custom-style="Compact"}
+d, Procrustes distance between group means (all shape coordinates); D, Mahalanobis distance from canonical variate analysis (principal components explaining `r 100 * PVAR`% of shape variance; pooled within-group covariance matrix). All P = `r f4(pmin)` (`r ITER` permutations)`r if (length(other_p)) paste0(" except *P = ", paste(f4(other_p), collapse = ", "))`
+:::
+
+## Classification
+
+Sex was classified correctly in `r f1(acc_cv(Rt$dsex))`% of right ears and `r f1(acc_cv(Lt$dsex))`% of left ears after cross-validation, and ethnicity in `r f1(acc_cv(Rt$deth))`% and `r f1(acc_cv(Lt$deth))`% (Table 7). The areas under the ROC curves were `r f2(ROC$Right$Sex$auc)` (right) and `r f2(ROC$Left$Sex$auc)` (left) for sex and `r f2(ROC$Right$Ethnicity$auc)` and `r f2(ROC$Left$Ethnicity$auc)` for ethnicity (Figure 5). Accuracy was similar within each ethnic group for sex (`r rng(c(Rt$sub[c("sex_fu", "sex_ha")], Lt$sub[c("sex_fu", "sex_ha")]))`%) and `r if (Rt$sub["eth_f"] > Rt$sub["eth_m"] && Lt$sub["eth_f"] > Lt$sub["eth_m"]) "somewhat higher within females than within males" else "differed between females and males"` for ethnicity. The four groups were classified correctly in `r f1(acc(Rt$t4))`% (right) and `r f1(acc(Lt$t4))`% (left) of cases, against 25% expected by chance (Additional file 1: Table S8). Sex accuracy ranged from `r f1(min(Rt$sens$Sex))`% to `r f1(max(Rt$sens$Sex))`% (right) and `r f1(min(Lt$sens$Sex))`% to `r f1(max(Lt$sens$Sex))`% (left) when 90–99% of shape variance was retained, and ethnic accuracy varied by at most `r f1(max(diff(range(Rt$sens$Ethnicity)), diff(range(Lt$sens$Ethnicity))))` percentage points (Additional file 1: Table S9). `r if (!is.null(so)) paste0("Excluding the ", xfun::numbers_to_words(length(so$ids)), " right-ear outlier", ifelse(length(so$ids) > 1, "s", ""), " changed sex and ethnic accuracy to ", f1(so$sex), "% and ", f1(so$eth), "% and left the effect sizes almost unchanged (Additional file 1: Table S10).") else "No ears were flagged as shape outliers."`
+
+```{r fig5, results = "asis"}
+fig_here(5)
+```
+
+::: {custom-style="Table Caption"}
+**Table 7** Classification of ears by sex, ethnicity and group
+:::
+
+```{r table7}
+cl <- function(r) c(f1(acc_o(r$dsex)), f1(acc_cv(r$dsex)), f1(grp_cv(r$dsex, 1)), f1(grp_cv(r$dsex, 2)), f1(r$sub["sex_fu"]), f1(r$sub["sex_ha"]),
+                    f1(acc_o(r$deth)), f1(acc_cv(r$deth)), f1(grp_cv(r$deth, 1)), f1(grp_cv(r$deth, 2)), f1(r$sub["eth_f"]), f1(r$sub["eth_m"]), f1(acc(r$t4)))
+R7 <- cl(Rt); L7 <- cl(Lt); o <- c(1, 7)
+t7 <- data.frame(Classification = c("Sex (all)", "   Females", "   Males", "Sex within Fulani", "Sex within Hausa", "Ethnicity (all)", "   Fulani", "   Hausa",
+                                    "Ethnicity within females", "Ethnicity within males", "Four groups"),
+  "Right: original (%)" = c(R7[1], "", "", "", "", R7[7], "", "", "", "", ""), "Right: cross-validated (%)" = R7[-o],
+  "Left: original (%)" = c(L7[1], "", "", "", "", L7[7], "", "", "", "", ""), "Left: cross-validated (%)" = L7[-o], check.names = FALSE)
+ftab(t7, c(2.2, 1.05, 1.15, 1.05, 1.15))
+```
+
+::: {custom-style="Compact"}
+Discriminant functions on the principal components explaining `r 100 * PVAR`% of shape variance (`r Rt$K` right, `r Lt$K` left), equal prior probabilities; cross-validation by the leave-one-out method. Sex: Procrustes distance `r f4(Rt$dsex$d)` (right) and `r f4(Lt$dsex$d)` (left), Hotelling's T² `r f1(Rt$dsex$T2)` and `r f1(Lt$dsex$T2)`; ethnicity: `r f4(Rt$deth$d)` and `r f4(Lt$deth$d)`, T² `r f1(Rt$deth$T2)` and `r f1(Lt$deth$T2)` (all P `r fpp(max(Rt$dsex$p_T2, Lt$dsex$p_T2, Rt$deth$p_T2, Lt$deth$p_T2))`)
+:::
+
+## Bilateral asymmetry
+
+Directional asymmetry was significant and accounted for `r f1(ar("side")$Rsq)`% of total shape variation (F = `r f2(ar("side")$F)`, P = `r fp(ar("side")$P)`), and fluctuating asymmetry (individual × side) for `r f1(ar("ind:side")$Rsq)`% (Table 8). The mean right and reflected left configurations differed by a Procrustes distance of `r f3(asym$d)`, `r if (asym$d > Rt$dsex$d) "larger" else "smaller"` than the distance between the mean male and female right ears (`r f3(Rt$dsex$d)`). The difference was largest at the posterior helix and the posterior part of the lobule margin, where points differed by `r rng(top(asym$pts, 6))`% of centroid size (Additional file 1: Table S7): the posterior helical margin projected further posteriorly in left ears (Figure 6). In the measurement-error subsample, directional asymmetry was of similar size (`r f1(sa$Rsq)`%, P = `r fp(sa$P)`), and fluctuating asymmetry was about `r xfun::numbers_to_words(round(fa_ratio))` times larger than measurement error (MS `r f4(fa$MS)` vs `r f4(me_err_row$MS)`; F = `r f2(fa$F)`, P = `r fp(fa$P)`; Table 4). Signed asymmetry differed with sex (`r f1(sg("Sex"))`%, P = `r fp(sg("Sex", "P"))`), ethnicity (`r f1(sg("Ethnicity"))`%, P = `r fp(sg("Ethnicity", "P"))`) and their interaction (`r f1(sg("Sex:Ethnicity"))`%, P = `r fp(sg("Sex:Ethnicity", "P"))`), `r if (sg("Age", "P") >= 0.05) "but not with age" else "and with age"` (P = `r fp(sg("Age", "P"))`).
+
+```{r fig6, results = "asis"}
+fig_here(6)
+```
+
+::: {custom-style="Table Caption"}
+**Table 8** Procrustes analysis of variance of bilateral asymmetry in ear shape
+:::
+
+```{r table8}
+g8 <- asym$group[match(c("Age", "Sex", "Ethnicity", "Sex:Ethnicity", "Residuals"), asym$group$Effect), ]
+t8 <- data.frame(Effect = c(sprintf("Asymmetry (N = %d)", nrow(part)), "Individual", "Side (directional asymmetry)", "Individual \u00D7 side (fluctuating asymmetry)",
+                            "Signed asymmetry by group", "Age", "Sex", "Ethnicity", "Sex \u00D7 ethnicity", "Residual"),
+  df = c("", ar("ind")$df, ar("side")$df, ar("ind:side")$df, "", g8$df), MS = c("", f4(c(ar("ind")$MS, ar("side")$MS, ar("ind:side")$MS)), "", rep("", 5)),
+  "R2" = c("", f2(c(ar("ind")$Rsq, ar("side")$Rsq, ar("ind:side")$Rsq)), "", f2(g8$Rsq)),
+  F = c("", f2(c(ar("ind")$F, ar("side")$F)), "", "", ifelse(is.na(g8$F), "", f2(g8$F))),
+  P = c("", fp(c(ar("ind")$P, ar("side")$P)), "", "", ifelse(is.na(g8$P), "", f4(g8$P))), check.names = FALSE)
+ftab(t8, c(2.9, 0.6, 0.9, 0.8, 0.8, 0.8), bold_rows = c(1, 5), hdr = c("Effect", "df", "MS", "R\u00B2 (%)", "F", "P"))
+```
+
+::: {custom-style="Compact"}
+Individual and side are tested against individual × side. Signed asymmetry is the difference between the right and the reflected left configuration of each participant (type II sums of squares). MS, mean square; P values from `r ITER` permutations
+:::
+
+# Discussion
+
+This study provides the first GMM reference data on ear shape for the Hausa and Fulani and shows that ear shape in both populations is sexually dimorphic, differs moderately between the two groups and is consistently asymmetric. The landmark protocol was repeatable: digitizing error accounted for about `r round(mean(c(me$Right$err, me$Left$err)))`% of shape variation, fluctuating asymmetry was about `r xfun::numbers_to_words(round(fa_ratio))` times larger than measurement error, and all reported effects were large relative to error. These findings are discussed below in turn, followed by their implications for forensic practice and the limitations of the study.
+
+## Repeatability of the landmark protocol
+
+A landmark protocol is useful for identification only if different ears differ more than repeated recordings of the same ear. Measurement error of `r f1(me$Right$err)`% (right) and `r f1(me$Left$err)`% (left) of shape variation, with repeatability of `r f2(me$Right$rep)` and `r f2(me$Left$rep)`, is small compared with the variation among individuals and with the effects of sex, ethnicity and side, and lies within the range usually regarded as acceptable for two-dimensional landmark data [@arnqvist1998; @fruciano2016]. Error was not uniform across the ear. The least repeatable landmarks, `r lc(least[1])` and `r lc(least[2])`, lie at the junction of the lobule with the cheek and in the shallow notch above the tragus, where the exact position of the point depends on the examiner's judgement; the most repeatable, the `r lc(most[1])`, `r lc(most[2])` and `r lc(most[3])`, are defined by distinct cartilaginous features or by a clear extreme point of the outline. Clearer operational definitions of the two weakest landmarks, or their replacement by semilandmarks on the adjacent outline, would be the most effective way to reduce error further. Representing the helix, lobule and inner ear structures by sliding semilandmarks captured the shape of curves that have few homologous points [@bookstein1997; @gunz2013], and the semilandmarks did not inflate error.
+
+Low measurement error relative to fluctuating asymmetry is a prerequisite for interpreting asymmetry, because random digitizing error is indistinguishable from fluctuating asymmetry unless it is estimated separately [@klingenberg1998; @klingenberg2015]. In the present data, fluctuating asymmetry was about `r xfun::numbers_to_words(round(fa_ratio))` times larger than measurement error, so the left–right differences reported here describe the ears rather than the digitizing. The small difference between digitization sessions `r if (me$Right$sess_P < 0.05) "for the right ear" else ""` (`r f2(me$Right$sess)`% of shape variation) indicates a slight drift in landmark placement over time and is a reason to digitize case and reference material in the same session where possible.
+
+## Sexual dimorphism
+
+Sex explained `r round(min(ef(Rt, "Sex"), ef(Lt, "Sex")))`–`r round(max(ef(Rt, "Sex"), ef(Lt, "Sex")))`% of ear shape variation and was classified correctly in `r round(min(acc_cv(Rt$dsex), acc_cv(Lt$dsex)))`–`r round(max(acc_cv(Rt$dsex), acc_cv(Lt$dsex)))`% of cases after cross-validation, with areas under the ROC curve of `r f2(ROC$Right$Sex$auc)` (right) and `r f2(ROC$Left$Sex$auc)` (left). This is higher than the 56–74% obtained from linear ear measurements in Hausa, Igbo and Yoruba adults [@fakorede2021] and the 68% obtained from ear measurements alone in a recent sample of 350 adults [@sezgin2023], and is consistent with the finding that landmark–semilandmark GMM detects ear shape differences that linear measurements miss [@lizhang2025]. Linear measurements record mainly the overall length and width of the auricle and its lobule, whereas the semilandmark outline records the curvature of the helix and the configuration of the concha, where the sex differences were concentrated.
+
+The differences lay mainly in the posterior helical margin and in the region of the antitragus and lower concha. Male ears tended towards the positive end of PC1, that is, towards an auricle that is narrower relative to its length, with a shorter line of attachment to the head and a lower antitragus. Larger ears in men are a consistent finding of anthropometric studies [@farkas1994; @sforza2009], and the ear continues to lengthen during adult life, so that its width relative to its length decreases with age [@sforza2009]. Because size could not be measured in the present photographs, part of the shape difference between the sexes may be allometric, that is, the shape that accompanies a larger ear rather than a sex-specific shape [@klingenberg2016]. For identification this distinction is of secondary importance, since a shape difference is usable whatever its cause, but it matters for comparisons with populations or age groups whose ears differ in size.
+
+Sexual dimorphism was not the same in the two populations. Sex explained `r f1(se_v(Rt, "Sex", "Fulani"))`% of right-ear shape variation in the Fulani and `r f1(se_v(Rt, "Sex", "Hausa"))`% in the Hausa, but `r f1(se_v(Lt, "Sex", "Fulani"))`% and `r f1(se_v(Lt, "Sex", "Hausa"))`% respectively in the left ear`r if ((se_v(Rt, "Sex", "Fulani") > se_v(Rt, "Sex", "Hausa")) != (se_v(Lt, "Sex", "Fulani") > se_v(Lt, "Sex", "Hausa"))) ", so that the population with the larger sex difference was not the same on the two sides" else ""`. This pattern matches the finding that signed asymmetry differed with sex, ethnicity and their interaction: when the left–right difference depends on both sex and population, the sex difference measured on one side cannot be the same as on the other. Patterns of sexual dimorphism in the human face vary among populations [@kleisner2021], and the present results show that the same is true of the ear within a single region of Nigeria. Reference standards for sex estimation from the ear should therefore be specific to the population and to the side.
+
+Classification accuracy was stable when the number of principal components was varied and when outliers were excluded, and it was estimated by leave-one-out cross-validation, which avoids the optimistic bias of resubstitution rates [@kovarovic2011]. Cross-validation within one sample does not, however, replace validation on independent individuals, and an accuracy of `r round(min(acc_cv(Rt$dsex), acc_cv(Lt$dsex)))`–`r round(max(acc_cv(Rt$dsex), acc_cv(Lt$dsex)))`% means that about one ear in six or seven is misclassified. In forensic practice, the posterior probability of sex from ear shape should therefore be reported as one line of evidence, combined with other indicators of sex and not used alone.
+
+## Ethnic variation
+
+Ethnic differences were smaller than sex differences, and ethnicity was classified correctly in `r round(min(acc_cv(Rt$deth), acc_cv(Lt$deth)))`–`r round(max(acc_cv(Rt$deth), acc_cv(Lt$deth)))`% of ears, against 50% expected by chance; the four sex–ethnic groups were classified correctly in `r f1(acc(Rt$t4))`% (right) and `r f1(acc(Lt$t4))`% (left) of cases, against 25%. Such accuracy indicates real population-level differences in mean shape but is not adequate for assigning an individual to an ethnic group, consistent with the substantial within-group variability reported for ear traits in multi-ethnic samples [@angelakopoulos2023] and with probabilistic approaches to population affinity [@mbonani2025].
+
+The modest size of the differences is consistent with the population history of the two groups. The Hausa and Fulani have lived alongside each other in northern Nigeria for centuries, share religion and many customs, many Fulani speak Hausa, and the two groups intermarry, so that the boundary between them is partly cultural. At the same time, the Fulani differ genetically from neighbouring Sahelian populations, with substantial North African and East African ancestry in addition to their West African ancestry [@triska2015]. Because external ear morphology is strongly heritable, with heritability estimates of about 25–60% for individual ear traits and associations with variants near genes such as *EDAR* and *TBX15* [@adhikari2015], differences in ancestry would be expected to produce differences in mean ear shape, while admixture would keep them small. Ethnic differences were larger in females than in males, which may reflect the wider age difference between Hausa and Fulani females in this sample or differences in the extent of admixture between the sexes, and should be examined in samples balanced for age.
+
+Ethnicity was self-reported, and the Fulani include pastoral and settled communities with different histories of contact with the Hausa. Misclassification of participants with mixed ancestry would have reduced the observed differences, so the present estimates are more likely to underestimate than to overestimate the differences between the two populations.
+
+## Bilateral asymmetry
+
+Directional asymmetry was unexpectedly large. It `r if (asym$d > Rt$dsex$d) "exceeded" else "approached"` the sex difference in magnitude, was of the same size in the full sample and in the measurement-error subsample, and cannot result from random digitizing error, which inflates fluctuating rather than directional asymmetry [@klingenberg1998; @fruciano2016]. Left–right differences in ear dimensions have also been reported in Nigerian populations [@fakorede2021], and individual ears are rarely symmetric when compared in three dimensions [@lin2025]. In a large three-dimensional study, ear position was on average symmetric, but the angle between the auricle and the side of the head, and in men the width and width-to-length ratio of the ear, differed between sides [@sforza2009].
+
+The last finding suggests how directional asymmetry may arise in photographs. A difference between sides in how far the auricle stands out from the head changes the outline seen on a lateral photograph, because a two-dimensional image projects a three-dimensional structure onto a plane [@cardini2014]; an ear that protrudes more is seen more obliquely and appears narrower. A systematic difference in head rotation or camera position between the photographs of the two sides would have a similar effect. The protocol was identical for both sides, but this source cannot be excluded without repeated photography. Two observations argue against a purely technical explanation: directional asymmetry was concentrated in particular regions of the ear (the posterior helix and lobule margin) rather than spread over the whole outline, and signed asymmetry differed between sexes and populations, which a uniform photographic bias would not produce.
+
+Fluctuating asymmetry, the random deviation of individuals from the mean asymmetry, is commonly interpreted as a measure of developmental instability [@palmer1986; @klingenberg2015]. Its magnitude here could be estimated reliably because measurement error was small, and the present data provide a baseline against which ear asymmetry in other populations, or in groups exposed to developmental stress, can be compared. Whatever the origin of the asymmetry, the practical consequence is that right and left ears should not be pooled or compared with a reference sample from the other side, and that reference data and classification functions should be side-specific.
+
+## Implications for forensic practice
+
+The external ear is of forensic interest because it is individually variable [@purkait2016; @krishan2019], is often visible in photographs and surveillance images when the face is partly hidden, and leaves impressions on surfaces [@ghosh2025]. Automated ear recognition has also advanced rapidly [@emersic2017]. The present results add a different use: estimating sex, and to a lesser extent population affinity, from the shape of an ear in a lateral photograph, which can narrow the search for a missing person or an unknown individual before comparison with antemortem images.
+
+Three practical points follow. First, the reference data should match the case: an ear should be compared with reference ears of the same side and, where it is known, from the same population. Second, the photograph should approximate the standard lateral view used here, since departures from the Frankfort horizontal or from perpendicular viewing alter the projected shape [@cardini2014]. Third, the result should be expressed as a probability rather than a categorical assignment. Because the landmark coordinates, classifiers and analysis code are openly available, a new ear can be digitized with the same protocol and projected into the reference shape space, and the discriminant functions can be re-estimated as further reference samples are added.
+
+## Limitations and future research
+
+The study has limitations. The analysis was restricted to shape because no scale was included in the photographs, so ear size, which is known to differ between the sexes, could not be used, and allometric effects on shape could not be assessed; part of the sex difference in shape may therefore reflect differences in ear size [@klingenberg2016]. Ear shape was recorded in two dimensions, and the error of photography itself was not estimated. Measurement error was estimated for a single observer; inter-observer error and the use of the protocol by other examiners remain to be assessed. Participants were young adults, and because ear shape changes with age [@sforza2009], the results may not apply to older individuals. Ethnicity was self-reported, which may have reduced rather than inflated the ethnic differences. Classification was cross-validated within a single sample, and accuracy should be confirmed in an independent sample before forensic use.
+
+Future work should include a scale in every photograph, so that size and allometry can be analysed, and repeated photography of the same ears to separate the error of photography from that of digitizing. Three-dimensional surface scans would remove the effects of projection and allow the asymmetry of auricular protrusion to be measured directly [@cardini2014; @lin2025]. Extending the protocol to older adults and to other Nigerian populations, such as the Kanuri, Yoruba and Igbo, would show how far the present reference data can be generalized, and an inter-observer study is needed before the protocol is used in casework. Finally, automated detection of ear landmarks [@emersic2017] could reduce both digitizing time and observer error and make shape-based assessment practical for large image collections.
+
+# Conclusions
+
+The ear shape of Hausa and Fulani adults is sexually dimorphic and moderately population-specific, and classifies sex with `r round(min(acc_cv(Rt$dsex), acc_cv(Lt$dsex)))`–`r round(max(acc_cv(Rt$dsex), acc_cv(Lt$dsex)))`% accuracy after cross-validation. Right and left ears differ systematically, so side-specific reference data are required. The `r N_LM`-landmark, `r sum(SEMI)`-semilandmark protocol is repeatable and suitable for ear photographs, and the openly available data and code allow it to be applied and extended to other populations.
+
+# Supplementary Information
+
+**Additional file 1:** Supplementary Tables S1–S10 (.docx). S1, measurement error by landmark and curve; S2, variance explained by the first ten principal components; S3, point displacements along PC1 and PC2; S4, tangent-space approximation; S5, Procrustes ANOVA without age; S6, simple effects; S7, point displacements between group means and between sides; S8, cross-validated classification of the four groups; S9, classification accuracy by the number of principal components; S10, results without the ears flagged as shape outliers
+
+# Abbreviations
+
+**ANOVA** Analysis of variance; **AUC** Area under the curve; **CVA** Canonical variate analysis; **DFA** Discriminant function analysis; **GMM** Geometric morphometrics; **GPA** Generalized Procrustes analysis; **IQR** Interquartile range; **MANOVA** Multivariate analysis of variance; **MS** Mean square; **PC** Principal component; **PCA** Principal component analysis; **ROC** Receiver operating characteristic; **SD** Standard deviation
+
+# Declarations
+
+## Ethics approval and consent to participate
+
+The study was approved by the [Health Research Ethics Committee - name blinded for review] (approval number [blinded for review]) and was conducted in accordance with the Declaration of Helsinki [@wma2013]. All participants gave written informed consent.
+
+## Consent for publication
+
+Not applicable. The article contains no identifiable images or individual personal data.
+
+## Availability of data and materials
+
+The raw tpsDig2 landmark files, participant covariates (sex, ethnicity and age) and the R Markdown file that generates this article from them are available through an anonymized link [] and will be deposited in a public repository with a persistent identifier on acceptance.
+
+## Competing interests
+
+The authors declare that they have no competing interests.
+
+## Funding
+
+This research received no specific grant from any funding agency in the public, commercial or not-for-profit sectors
+
+## Acknowledgements
+
+The authors thank the participants, the primary health care authority and the post-primary schools management board of Mayo-Belwa Local Government Area for their cooperation.
+
+# References
+
+::: {#refs}
+:::
+
+```{r legends, results = "asis"}
+## journal version: figure titles and legends collected at the end (the figures are uploaded as separate files)
+if (!params$embed_figures) knitr::asis_output(paste0("# Figure titles and legends\n\n", paste(sapply(seq_along(FIGS), fig_block, image = FALSE), collapse = "")))
+```
