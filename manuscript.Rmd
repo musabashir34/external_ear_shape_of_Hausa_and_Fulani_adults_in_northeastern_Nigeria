@@ -132,7 +132,7 @@ pmin <- 1 / (ITER + 1)
 
 *Conclusions:* Ear shape is sexually dimorphic and moderately population-specific in Hausa and Fulani adults. Because right and left ears differ systematically, side-specific reference data are needed, and ethnic differences support only population-level, probabilistic inference. The landmark protocol is repeatable, and the data and code are openly available.
 
-*Keywords:* auricle; sliding semilandmarks; Procrustes analysis; sex estimation; population affinity; measurement error; forensic anthropology
+*Keywords:* ear shape; sex estimation; Nigeria
 
 `r knitr::asis_output(PAGEBREAK)`
 
