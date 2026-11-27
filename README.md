@@ -92,13 +92,6 @@ The analysis stops with an explanation if the raw data are inconsistent, for exa
 - a duplicated specimen ID;
 - a participant without both ears.
 
-## Author details and anonymity
-
-The repository contains no author names. Names, affiliations, approval numbers and funding are read from
-`private/author_details.R`, which is excluded from Git; copy `author_details_TEMPLATE.R` there and fill it in before knitting the
-non-anonymised manuscript (`blind = FALSE`). Without that file, even that version shows placeholders, so the repository can be shared for
-double-blind review. Knitted Word files (`manuscript*.docx`) are also excluded from Git.
-
 ## Licence
 
 Code: MIT licence. Data: CC BY 4.0. The data contain no photographs, names or other identifying information.
