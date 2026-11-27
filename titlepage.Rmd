@@ -1,0 +1,9 @@
+<!-- Title page of the non-anonymised manuscript. Author details come from private/author_details.R (not in the repository). -->
+
+`r AD$authors`
+
+`r paste(AD$affiliations, collapse = "\n\n")`
+
+Corresponding author: `r AD$corresponding`
+
+Running title: Ear shape of Hausa and Fulani adults

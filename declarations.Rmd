@@ -1,0 +1,23 @@
+`r if (!params$blind) paste0("# Acknowledgements\n\n", AD$acknowledgements, "\n\n")`
+
+# Declarations
+
+## Contributions of individual authors
+
+`r if (params$blind) "[Withheld for anonymous review.]" else AD$contributions`
+
+## Ethics statement
+
+`r if (params$blind) "The study protocol was approved by a research ethics committee (name and approval number withheld for anonymous review)" else AD$ethics` and was conducted in accordance with the Declaration of Helsinki [@wma2013]. All participants gave written informed consent.
+
+## Data availability statement
+
+The raw tpsDig2 landmark files, the participant covariates (sex, ethnicity and age) and the R Markdown file that generates every number, table and figure of this article from them are `r if (params$blind) "available for review at https://anonymous.4open.science/r/external_ear_shape_of_Hausa_and_Fulani_adults_in_northeastern_Nigeria-5627/" else AD$data`. The photographs are not shared, to protect the participants' privacy.
+
+## Financial disclosure
+
+`r if (params$blind) "[Withheld for anonymous review.]" else AD$funding`
+
+## Conflict of interest
+
+The authors declare no conflict of interest.
